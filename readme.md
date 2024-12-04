@@ -15,8 +15,9 @@ npm install query-analyzer --save-dev
 | -------------- |  ----------  | --------- |
 |     0.0.1      |     14-16    |    6.x    |
 
+## Options
 
-##Options
+```ts
   verbose: boolean;
   costs: boolean;
   settings: boolean;
@@ -25,6 +26,7 @@ npm install query-analyzer --save-dev
   wal: boolean;
   timing: boolean;
   summary: boolean;
+```
 
 ## Usage
 
