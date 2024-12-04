@@ -7,6 +7,7 @@
 
 ```bash
 npm install query-analyzer --save-dev
+```
 
 ## Compatibility
 
