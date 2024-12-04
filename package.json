@@ -4,8 +4,8 @@
   "description": "A utility for enhancing Sequelize queries with EXPLAIN options and logging detailed query plans.",
   "author": "Sohaib Abid",
   "license": "MIT",
-  "main": "dist/analyzer.js",
-  "types": "dist/types.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build"

@@ -6,9 +6,8 @@
       "strict": true,
       "esModuleInterop": true,
       "moduleResolution": "node",
-      "declaration": true,
-      "sourceMap": true
+      "declaration": true
     },
-    "include": ["src/**/*"]
+    "include": ["src"]
   }
   
