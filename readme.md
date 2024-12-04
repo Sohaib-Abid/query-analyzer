@@ -7,3 +7,40 @@
 
 ```bash
 npm install query-analyzer --save-dev
+
+## Compatibility
+
+| Query-Analyzer |   Postgres   | Sequelize |
+| -------------- |  ----------  | --------- |
+|     0.0.1      |     14-16    |    6.x    |
+
+
+##Options
+  verbose: boolean;
+  costs: boolean;
+  settings: boolean;
+  buffers: boolean;
+  serialize: 'NONE' | 'TEXT' | 'BINARY';
+  wal: boolean;
+  timing: boolean;
+  summary: boolean;
+
+## Usage
+
+```ts
+import {enableAnalyzer} from 'query-analyzer'
+
+(async () => {
+  try {
+    await enableAnalyzer(sequelize,options: analyzerOptions);  //call this in server.ts
+
+    const server = app.listen(app.get('port'), () => {
+      console.log(`App  is running at port ${app.get('port')}.`]);
+    });
+    return server;
+  }
+  catch (err) {
+    process.exit(1);
+  }
+})();
+```
