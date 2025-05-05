@@ -4,6 +4,7 @@
       "module": "CommonJS",
       "target": "ES6",
       "strict": true,
+      "lib": ["dom", "es2019"],
       "esModuleInterop": true,
       "moduleResolution": "node",
       "declaration": true
