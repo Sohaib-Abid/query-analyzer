@@ -1,6 +1,6 @@
 {
   "name": "query-analyzer",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A utility for enhancing Sequelize queries with EXPLAIN options and logging detailed query plans.",
   "author": "Sohaib Abid",
   "license": "MIT",
