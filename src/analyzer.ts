@@ -68,7 +68,7 @@ export async function enableAnalyzer(sequelize: any, options: AnalyzerOptions = 
 
 
                     const queryResult = (await originalQuery.apply(sequelize, args)) as QueryPlanRow[];
-                    payload.queryPlan = queryResult.reduce<string>((col, cur) => col + cur['QUERY PLAN'] + '\n', '');
+                    payload.queryPlan = queryResult.flat().map(item => item['QUERY PLAN']).join('\n');
                     const costMatches = ((payload.queryPlan.match(/cost=([\d.]+)/) || [])[1] || '').split('..');
                     payload.startCost = costMatches[0] || 'N/A';
                     payload.endCost = costMatches[1] || 'N/A';
