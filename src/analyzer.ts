@@ -1,4 +1,3 @@
-import { format } from "date-fns";
 import { appendCsv } from './csvUtil';
 import { AnalyzerOptions, Payload, QueryPlanRow } from './types';
 
@@ -79,7 +78,8 @@ export async function enableAnalyzer(sequelize: any, options: AnalyzerOptions = 
                     const planningTimeMatch = payload.queryPlan.match(/Planning Time: (\d+\.\d+) /);
                     payload.planningTime = planningTimeMatch ? parseFloat(planningTimeMatch[1]).toFixed(2) : 'N/A';
                 }
-                await appendCsv(`analyzer/report-${format(new Date(), 'yyyy-MM-dd')}.csv`, payload);
+                const dateStamp = new Date().toISOString().slice(0, 10);
+                await appendCsv(`analyzer/report-${dateStamp}.csv`, payload);
             } catch (e: unknown) {
                 if (e instanceof Error) {
                     console.error(`EXPLAIN error: ${e.message}\n\tQUERY: ${query}`);
