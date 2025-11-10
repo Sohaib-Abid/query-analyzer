@@ -2,6 +2,7 @@ import { enableAnalyzer } from '../src/analyzer';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { AnalyzerOptions } from '../src/types';
+import * as csvUtil from '../src/csvUtil';
 
 // Test directory for analyzer output
 const TEST_DIR = path.join(__dirname, 'test-analyzer-output');
@@ -412,9 +413,8 @@ describe('enableAnalyzer - Characterization Tests', () => {
   });
 
   describe('Query Plan Parsing', () => {
-    it('should extract cost values from query plan (CURRENT BEHAVIOR - BUGGY)', async () => {
+    it('should correctly parse both start and end costs from query plan', async () => {
       const mockSequelize = createMockSequelize();
-      const appendCsvMock = jest.fn();
       
       const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
         const query = typeof args[0] === 'object' ? args[0].query : args[0];
@@ -434,16 +434,112 @@ describe('enableAnalyzer - Characterization Tests', () => {
       
       // Capture what gets logged
       let capturedPayload: any = null;
-      jest.spyOn(require('../src/csvUtil'), 'appendCsv').mockImplementation(async (...args: any[]) => {
-        capturedPayload = args[1];
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
       });
       
       await enableAnalyzer(mockSequelize);
       await mockSequelize.query('SELECT * FROM users');
 
-      // Current buggy behavior: startCost is parsed but endCost is not properly extracted
-      // This test documents the CURRENT behavior, not the correct behavior
-      // The regex /cost=([\d.]+)/ only captures the first number
+      // Should correctly parse both start and end costs
+      expect(capturedPayload).toBeDefined();
+      expect(capturedPayload.startCost).toBe('10.50');
+      expect(capturedPayload.endCost).toBe('250.75');
+      
+      csvSpy.mockRestore();
+    });
+
+    it('should parse costs with different decimal formats', async () => {
+      const mockSequelize = createMockSequelize();
+      
+      const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
+        const query = typeof args[0] === 'object' ? args[0].query : args[0];
+        
+        if (query.startsWith('EXPLAIN')) {
+          return [
+            { 'QUERY PLAN': 'Index Scan on users  (cost=0.00..100.00 rows=500 width=16)' }
+          ];
+        }
+        
+        return [{ id: 1 }];
+      });
+      
+      mockSequelize.query = originalQuery as any;
+      
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      await enableAnalyzer(mockSequelize);
+      await mockSequelize.query('SELECT * FROM users');
+
+      expect(capturedPayload.startCost).toBe('0.00');
+      expect(capturedPayload.endCost).toBe('100.00');
+      
+      csvSpy.mockRestore();
+    });
+
+    it('should handle integer costs without decimals', async () => {
+      const mockSequelize = createMockSequelize();
+      
+      const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
+        const query = typeof args[0] === 'object' ? args[0].query : args[0];
+        
+        if (query.startsWith('EXPLAIN')) {
+          return [
+            { 'QUERY PLAN': 'Sort  (cost=5..10 rows=100 width=8)' }
+          ];
+        }
+        
+        return [{ id: 1 }];
+      });
+      
+      mockSequelize.query = originalQuery as any;
+      
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      await enableAnalyzer(mockSequelize);
+      await mockSequelize.query('SELECT * FROM users');
+
+      expect(capturedPayload.startCost).toBe('5');
+      expect(capturedPayload.endCost).toBe('10');
+      
+      csvSpy.mockRestore();
+    });
+
+    it('should return N/A when cost information is missing', async () => {
+      const mockSequelize = createMockSequelize();
+      
+      const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
+        const query = typeof args[0] === 'object' ? args[0].query : args[0];
+        
+        if (query.startsWith('EXPLAIN')) {
+          return [
+            { 'QUERY PLAN': 'Result  (rows=1 width=4)' }  // No cost info
+          ];
+        }
+        
+        return [{ id: 1 }];
+      });
+      
+      mockSequelize.query = originalQuery as any;
+      
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      await enableAnalyzer(mockSequelize);
+      await mockSequelize.query('SELECT * FROM users');
+
+      expect(capturedPayload.startCost).toBe('N/A');
+      expect(capturedPayload.endCost).toBe('N/A');
+      
+      csvSpy.mockRestore();
     });
 
     it('should extract planning time from query plan', async () => {
@@ -600,8 +696,9 @@ describe('enableAnalyzer - Characterization Tests', () => {
       // Should still return the original query results
       expect(result).toEqual([{ id: 1 }]);
       
-      // Should log the error
-      expect(localConsoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('EXPLAIN error'));
+      // Should log the error with new structured format
+      expect(localConsoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('EXPLAIN_FAILED'));
+      expect(localConsoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('SELECT * FROM users'));
       
       localConsoleErrorSpy.mockRestore();
       // Re-mock console.error for other tests
@@ -643,7 +740,9 @@ describe('enableAnalyzer - Characterization Tests', () => {
       const result = await mockSequelize.query('SELECT * FROM users');
 
       expect(result).toEqual([{ id: 1 }]);
-      expect(localConsoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('unknown error occurred'));
+      // Should log structured error even for non-Error objects
+      expect(localConsoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('EXPLAIN_FAILED'));
+      expect(localConsoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('SELECT * FROM users'));
       
       localConsoleErrorSpy.mockRestore();
       // Re-mock console.error for other tests
@@ -703,6 +802,308 @@ describe('enableAnalyzer - Characterization Tests', () => {
       if (explainCall && explainCall[1]) {
         expect(explainCall[1].type).toBe('RAW');
       }
+    });
+  });
+
+  describe('Structured Error Handling', () => {
+    it('should call onError callback when EXPLAIN fails', async () => {
+      const mockSequelize = createMockSequelize();
+      const errors: any[] = [];
+      
+      const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
+        const query = typeof args[0] === 'object' ? args[0].query : args[0];
+        
+        if (query.startsWith('EXPLAIN')) {
+          throw new Error('EXPLAIN failed');
+        }
+        
+        return [{ id: 1 }];
+      });
+      
+      mockSequelize.query = originalQuery as any;
+      
+      await enableAnalyzer(mockSequelize, {
+        onError: (error) => {
+          errors.push(error);
+        }
+      });
+
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should have called onError
+      expect(errors.length).toBe(1);
+      expect(errors[0].name).toBe('ExplainError');
+      expect(errors[0].code).toBe('EXPLAIN_FAILED');
+      expect(errors[0].query).toBe('SELECT * FROM users');
+    });
+
+    it('should call onError callback when CSV write fails', async () => {
+      const mockSequelize = createMockSequelize();
+      const errors: any[] = [];
+      
+      // Mock CSV to fail
+      jest.spyOn(csvUtil, 'appendCsv').mockRejectedValue(new Error('Disk full'));
+      
+      await enableAnalyzer(mockSequelize, {
+        onError: (error) => {
+          errors.push(error);
+        }
+      });
+
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should have called onError for CSV failure
+      expect(errors.length).toBe(1);
+      expect(errors[0].name).toBe('CsvError');
+      expect(errors[0].code).toBe('CSV_WRITE_FAILED');
+    });
+
+    it('should call onSlowQuery callback for slow queries', async () => {
+      const mockSequelize = createMockSequelize();
+      const slowQueries: any[] = [];
+      
+      // Create a mock that takes time
+      const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
+        const query = typeof args[0] === 'object' ? args[0].query : args[0];
+        
+        // Simulate slow query
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+        if (query.startsWith('EXPLAIN')) {
+          return [{ 'QUERY PLAN': 'Seq Scan (cost=0.00..100.00)' }];
+        }
+        
+        return [{ id: 1 }];
+      });
+      
+      mockSequelize.query = originalQuery as any;
+      
+      await enableAnalyzer(mockSequelize, {
+        slowQueryThreshold: 100,  // 100ms threshold
+        onSlowQuery: (payload) => {
+          slowQueries.push(payload);
+        }
+      });
+
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should have called onSlowQuery
+      expect(slowQueries.length).toBe(1);
+      expect(slowQueries[0].query).toBe('SELECT * FROM users');
+      expect(slowQueries[0].actualExecutionTime).toBeGreaterThanOrEqual(100);
+    });
+
+    it('should not call onSlowQuery for fast queries', async () => {
+      const mockSequelize = createMockSequelize();
+      const slowQueries: any[] = [];
+      
+      await enableAnalyzer(mockSequelize, {
+        slowQueryThreshold: 1000,  // 1 second threshold
+        onSlowQuery: (payload) => {
+          slowQueries.push(payload);
+        }
+      });
+
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should NOT have called onSlowQuery (query is fast)
+      expect(slowQueries.length).toBe(0);
+    });
+
+    it('should support async error callbacks', async () => {
+      const mockSequelize = createMockSequelize();
+      let errorHandled = false;
+      
+      const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
+        const query = typeof args[0] === 'object' ? args[0].query : args[0];
+        
+        if (query.startsWith('EXPLAIN')) {
+          throw new Error('EXPLAIN failed');
+        }
+        
+        return [{ id: 1 }];
+      });
+      
+      mockSequelize.query = originalQuery as any;
+      
+      await enableAnalyzer(mockSequelize, {
+        onError: async (error) => {
+          // Simulate async error handling (e.g., logging to external service)
+          await new Promise(resolve => setTimeout(resolve, 10));
+          errorHandled = true;
+        }
+      });
+
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Async callback should have completed
+      expect(errorHandled).toBe(true);
+    });
+
+    it('should include original error in AnalyzerError', async () => {
+      const mockSequelize = createMockSequelize();
+      const errors: any[] = [];
+      
+      const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
+        const query = typeof args[0] === 'object' ? args[0].query : args[0];
+        
+        if (query.startsWith('EXPLAIN')) {
+          throw new Error('Connection timeout');
+        }
+        
+        return [{ id: 1 }];
+      });
+      
+      mockSequelize.query = originalQuery as any;
+      
+      await enableAnalyzer(mockSequelize, {
+        onError: (error) => {
+          errors.push(error);
+        }
+      });
+
+      await mockSequelize.query('SELECT * FROM users');
+
+      expect(errors[0].originalError).toBeDefined();
+      expect(errors[0].originalError.message).toBe('Connection timeout');
+    });
+  });
+
+  describe('Enable/Disable Configuration', () => {
+    it('should analyze queries by default (backward compatibility)', async () => {
+      const mockSequelize = createMockSequelize();
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      // No options provided - should analyze
+      await enableAnalyzer(mockSequelize);
+      
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should have captured query analysis
+      expect(capturedPayload).toBeDefined();
+      expect(capturedPayload.query).toBe('SELECT * FROM users');
+      
+      csvSpy.mockRestore();
+    });
+
+    it('should skip all analysis when enabled=false', async () => {
+      const mockSequelize = createMockSequelize();
+      const originalQuery = mockSequelize.query;
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      // Explicitly disable
+      await enableAnalyzer(mockSequelize, { enabled: false });
+      
+      const result = await mockSequelize.query('SELECT * FROM users');
+
+      // Should return results but not capture analysis
+      expect(result).toBeDefined();
+      expect(capturedPayload).toBeNull();
+      
+      // Should only call originalQuery once (not run EXPLAIN)
+      expect(originalQuery).toHaveBeenCalledTimes(1);
+      
+      csvSpy.mockRestore();
+    });
+
+    it('should analyze queries when enabled=true', async () => {
+      const mockSequelize = createMockSequelize();
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      // Explicitly enable
+      await enableAnalyzer(mockSequelize, { enabled: true });
+      
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should have captured query analysis
+      expect(capturedPayload).toBeDefined();
+      expect(capturedPayload.query).toBe('SELECT * FROM users');
+      
+      csvSpy.mockRestore();
+    });
+
+    it('should only enable in matching environment', async () => {
+      const mockSequelize = createMockSequelize();
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      // Set NODE_ENV to development
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      
+      // Only enable in development
+      await enableAnalyzer(mockSequelize, { environment: 'development' });
+      
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should have captured query analysis
+      expect(capturedPayload).toBeDefined();
+      
+      // Restore env
+      process.env.NODE_ENV = originalEnv;
+      csvSpy.mockRestore();
+    });
+
+    it('should skip analysis in non-matching environment', async () => {
+      const mockSequelize = createMockSequelize();
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      // Set NODE_ENV to production
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      
+      // Only enable in development
+      await enableAnalyzer(mockSequelize, { environment: 'development' });
+      
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should NOT have captured query analysis
+      expect(capturedPayload).toBeNull();
+      
+      // Restore env
+      process.env.NODE_ENV = originalEnv;
+      csvSpy.mockRestore();
+    });
+
+    it('should respect enabled=false even in matching environment', async () => {
+      const mockSequelize = createMockSequelize();
+      let capturedPayload: any = null;
+      const csvSpy = jest.spyOn(csvUtil, 'appendCsv').mockImplementation(async (filePath: string, payload: any) => {
+        capturedPayload = payload;
+      });
+      
+      // Set NODE_ENV to development
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      
+      // Explicitly disabled, even though environment matches
+      await enableAnalyzer(mockSequelize, { 
+        enabled: false,
+        environment: 'development' 
+      });
+      
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should NOT have captured query analysis (enabled takes precedence)
+      expect(capturedPayload).toBeNull();
+      
+      // Restore env
+      process.env.NODE_ENV = originalEnv;
+      csvSpy.mockRestore();
     });
   });
 });
