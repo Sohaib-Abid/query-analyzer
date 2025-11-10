@@ -105,8 +105,9 @@ export async function enableAnalyzer(sequelize: Sequelize, options: AnalyzerOpti
                     }
                 }
 
-                if (options.onSlowQuery && options.slowQueryThreshold) {
-                    if (actualExecutionTime >= options.slowQueryThreshold) {
+                if (options.onSlowQuery) {
+                    const threshold = options.slowQueryThreshold ?? 1000;  // Default: 1000ms
+                    if (actualExecutionTime >= threshold) {
                         await Promise.resolve(options.onSlowQuery(payload));
                     }
                 }

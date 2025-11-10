@@ -129,7 +129,7 @@ interface AnalyzerOptions {
   // Monitoring
   onError?: (error: AnalyzerError) => void | Promise<void>;
   onSlowQuery?: (payload: Payload) => void | Promise<void>;
-  slowQueryThreshold?: number;      // In ms, default: 1000
+  slowQueryThreshold?: number;      // In ms, default: 1000, set to 0 for all queries
   
   // PostgreSQL EXPLAIN Options
   verbose?: boolean;

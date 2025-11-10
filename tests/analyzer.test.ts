@@ -910,6 +910,59 @@ describe('enableAnalyzer - Characterization Tests', () => {
       expect(slowQueries.length).toBe(0);
     });
 
+    it('should use default threshold of 1000ms when not specified', async () => {
+      const mockSequelize = createMockSequelize();
+      const slowQueries: any[] = [];
+      
+      // Create a mock that takes time
+      const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
+        const query = typeof args[0] === 'object' ? args[0].query : args[0];
+        
+        // Simulate query taking 1100ms
+        await new Promise(resolve => setTimeout(resolve, 1100));
+        
+        if (query.startsWith('EXPLAIN')) {
+          return [{ 'QUERY PLAN': 'Seq Scan (cost=0.00..100.00)' }];
+        }
+        
+        return [{ id: 1 }];
+      });
+      
+      mockSequelize.query = originalQuery as any;
+      
+      // Don't specify slowQueryThreshold - should use default 1000ms
+      await enableAnalyzer(mockSequelize, {
+        onSlowQuery: (payload) => {
+          slowQueries.push(payload);
+        }
+        // Note: slowQueryThreshold NOT provided
+      });
+
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should have called onSlowQuery (query > 1000ms default)
+      expect(slowQueries.length).toBe(1);
+      expect(slowQueries[0].actualExecutionTime).toBeGreaterThanOrEqual(1000);
+    });
+
+    it('should call onSlowQuery for ALL queries when threshold is 0', async () => {
+      const mockSequelize = createMockSequelize();
+      const allQueries: any[] = [];
+      
+      await enableAnalyzer(mockSequelize, {
+        slowQueryThreshold: 0,  // 0ms = all queries
+        onSlowQuery: (payload) => {
+          allQueries.push(payload);
+        }
+      });
+
+      await mockSequelize.query('SELECT * FROM users');
+
+      // Should have called onSlowQuery even for fast query
+      expect(allQueries.length).toBe(1);
+      expect(allQueries[0].query).toBe('SELECT * FROM users');
+    });
+
     it('should support async error callbacks', async () => {
       const mockSequelize = createMockSequelize();
       let errorHandled = false;
