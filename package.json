@@ -34,8 +34,12 @@
     "@types/jest": "^29.5.14",
     "@types/node": "^20.17.9",
     "jest": "^29.7.0",
+    "sequelize": "^6.37.7",
     "ts-jest": "^29.2.5",
     "typescript": "^5.7.2"
+  },
+  "peerDependencies": {
+    "sequelize": "^6.0.0 || ^7.0.0-alpha"
   },
   "engines": {
     "node": ">=16.0.0 <=22.x"
