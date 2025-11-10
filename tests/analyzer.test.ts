@@ -37,7 +37,13 @@ function createMockSequelize() {
 }
 
 describe('enableAnalyzer - Characterization Tests', () => {
+  // Suppress console.error during tests (we expect many due to intentional error scenarios)
+  let consoleErrorSpy: jest.SpyInstance;
+
   beforeEach(async () => {
+    // Suppress console.error output to keep test logs clean
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    
     // Clean up test directory before each test
     try {
       await fs.rm(TEST_DIR, { recursive: true, force: true });
@@ -57,6 +63,9 @@ describe('enableAnalyzer - Characterization Tests', () => {
   });
 
   afterEach(async () => {
+    // Restore console.error
+    consoleErrorSpy.mockRestore();
+    
     jest.clearAllMocks();
     try {
       await fs.rm(TEST_DIR, { recursive: true, force: true });
@@ -569,7 +578,9 @@ describe('enableAnalyzer - Characterization Tests', () => {
   describe('Error Handling', () => {
     it('should log error and continue when EXPLAIN fails', async () => {
       const mockSequelize = createMockSequelize();
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      // Restore console.error for this specific test since we're testing error logging
+      consoleErrorSpy.mockRestore();
+      const localConsoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
       
       const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
         const query = typeof args[0] === 'object' ? args[0].query : args[0];
@@ -590,9 +601,11 @@ describe('enableAnalyzer - Characterization Tests', () => {
       expect(result).toEqual([{ id: 1 }]);
       
       // Should log the error
-      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('EXPLAIN error'));
+      expect(localConsoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('EXPLAIN error'));
       
-      consoleErrorSpy.mockRestore();
+      localConsoleErrorSpy.mockRestore();
+      // Re-mock console.error for other tests
+      consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     });
 
     it('should rethrow errors from the original query', async () => {
@@ -610,7 +623,9 @@ describe('enableAnalyzer - Characterization Tests', () => {
 
     it('should handle unknown error types', async () => {
       const mockSequelize = createMockSequelize();
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      // Restore console.error for this specific test since we're testing error logging
+      consoleErrorSpy.mockRestore();
+      const localConsoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
       
       const originalQuery = jest.fn(async (...args: any[]): Promise<any> => {
         const query = typeof args[0] === 'object' ? args[0].query : args[0];
@@ -628,9 +643,11 @@ describe('enableAnalyzer - Characterization Tests', () => {
       const result = await mockSequelize.query('SELECT * FROM users');
 
       expect(result).toEqual([{ id: 1 }]);
-      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('unknown error occurred'));
+      expect(localConsoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('unknown error occurred'));
       
-      consoleErrorSpy.mockRestore();
+      localConsoleErrorSpy.mockRestore();
+      // Re-mock console.error for other tests
+      consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     });
   });
 
